@@ -1,0 +1,59 @@
+{
+  "name": "istv-reel-editor",
+  "productName": "ISTV Reel Editor",
+  "version": "0.1.0",
+  "description": "Cross-platform desktop editor that turns a documentary into 9:16 reels.",
+  "main": "src/main/main.js",
+  "author": "ISTV",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/launch.js",
+    "smoke": "node scripts/launch.js --smoke",
+    "test": "node test/model.test.js",
+    "dist:win": "electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0"
+  },
+  "build": {
+    "appId": "com.istv.reeleditor",
+    "productName": "ISTV Reel Editor",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "scripts/**/*",
+      "package.json",
+      "!engine/**"
+    ],
+    "extraResources": [
+      {
+        "from": "engine",
+        "to": "engine",
+        "filter": ["**/*", "!.venv", "!**/__pycache__", "!**/*.pyc"]
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**",
+      "node_modules/ffprobe-static/**"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "artifactName": "ISTV-Reel-Editor-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  }
+}

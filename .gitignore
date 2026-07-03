@@ -1,0 +1,10 @@
+node_modules/
+dist/
+out/
+release/
+*.log
+
+# Vendored engine's own local venv / bytecode cache — never ship these
+engine/.venv/
+engine/**/__pycache__/
+engine/**/*.pyc
