@@ -15,21 +15,10 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
-const { app } = require("electron");
 const ffmpeg = require("./ffmpeg");
 
-// The export/sync engine is vendored under engine/ (a standalone copy of the
-// pipeline repo's export_cli.py + src/*.py) so this app doesn't depend on being
-// checked out next to that repo. Requires Python 3.11+ with
-// engine/requirements.txt installed, and Node.js on PATH (media.cjs's ffmpeg
-// calls run under a plain `node`, not Electron's bundled one) — see README.
-// electron-builder copies engine/ into resources/ as `extraResources` (never
-// inside app.asar, since a spawned python.exe can't read files out of an asar
-// archive) — so the packaged path differs from the dev one.
-const ENGINE_ROOT = app.isPackaged
-  ? path.join(process.resourcesPath, "engine")
-  : path.resolve(__dirname, "..", "..", "engine");
-const EXPORT_CLI = path.join(ENGINE_ROOT, "export_cli.py");
+const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
+const EXPORT_CLI = path.join(REPO_ROOT, "export_cli.py");
 
 const RESOLUTIONS = {
   "720p": { width: 720, height: 1280 },
@@ -45,8 +34,8 @@ const QUALITY = { Lower: "low", Recommended: "medium", Higher: "high" };
 const PRESET = { Lower: "veryfast", Recommended: "faster", Higher: "medium" };
 
 function resolvePython() {
-  const win = path.join(ENGINE_ROOT, ".venv", "Scripts", "python.exe");
-  const nix = path.join(ENGINE_ROOT, ".venv", "bin", "python");
+  const win = path.join(REPO_ROOT, ".venv", "Scripts", "python.exe");
+  const nix = path.join(REPO_ROOT, ".venv", "bin", "python");
   if (fs.existsSync(win)) return win;
   if (fs.existsSync(nix)) return nix;
   return process.platform === "win32" ? "python" : "python3";
@@ -151,7 +140,7 @@ function exportReels({ srcPath, outDir, reels, dialog, cameras, onEvent }) {
     const py = resolvePython();
     console.log(`[export] spawning: ${py} ${EXPORT_CLI} (${spec.reels.length} reel(s) -> ${outDir})`);
     const child = spawn(py, [EXPORT_CLI, specPath], {
-      cwd: ENGINE_ROOT,
+      cwd: REPO_ROOT,
       env: spawnEnv(),
       windowsHide: true,
     });

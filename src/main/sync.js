@@ -11,19 +11,14 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
-const { app } = require("electron");
 const ffmpeg = require("./ffmpeg");
 
-// See export.js for why this points at a vendored copy of the engine (and why
-// the packaged path differs from the dev one) rather than a sibling pipeline repo.
-const ENGINE_ROOT = app.isPackaged
-  ? path.join(process.resourcesPath, "engine")
-  : path.resolve(__dirname, "..", "..", "engine");
-const SYNC_CLI = path.join(ENGINE_ROOT, "sync_cameras_cli.py");
+const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
+const SYNC_CLI = path.join(REPO_ROOT, "sync_cameras_cli.py");
 
 function resolvePython() {
-  const win = path.join(ENGINE_ROOT, ".venv", "Scripts", "python.exe");
-  const nix = path.join(ENGINE_ROOT, ".venv", "bin", "python");
+  const win = path.join(REPO_ROOT, ".venv", "Scripts", "python.exe");
+  const nix = path.join(REPO_ROOT, ".venv", "bin", "python");
   if (fs.existsSync(win)) return win;
   if (fs.existsSync(nix)) return nix;
   return process.platform === "win32" ? "python" : "python3";
@@ -55,7 +50,7 @@ function syncCameras({ referenceAudioPath, cameras, onEvent }) {
     let stderr = "";
     const py = resolvePython();
     const child = spawn(py, [SYNC_CLI, specPath], {
-      cwd: ENGINE_ROOT,
+      cwd: REPO_ROOT,
       env: spawnEnv(),
       windowsHide: true,
     });
