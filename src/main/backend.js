@@ -156,6 +156,16 @@ function postJSON(pathName, obj, { timeoutMs = 20000 } = {}) {
   });
 }
 
+// On the serverless backend, a single GET /jobs/{id} poll can itself run one
+// bounded Claude call synchronously (a transcript-cleanup chunk, the reel
+// selection call, or the brand-story call) before responding, rather than
+// just reading cached status. That call retries internally up to 6 times on
+// transient Claude errors with backoff capped at 30s — 90s of backoff alone,
+// before counting any of the actual Claude round-trips. getJSON's 15s default
+// (meant for cheap status checks) was tripping on legitimately slow-but-healthy
+// calls, failing the whole selection step with a misleading "timed out".
+const POLL_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+
 /**
  * Poll GET /jobs/{id} until status is done/error. Calls onStatus each tick.
  * Resolves with the full final status object (has .transcript or .analysis).
@@ -164,7 +174,7 @@ async function pollJob(jobId, { onStatus, intervalMs = 2500, timeoutMs = 30 * 60
   const start = Date.now();
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const s = await getJSON(`${BACKEND_URL}/jobs/${jobId}`);
+    const s = await getJSON(`${BACKEND_URL}/jobs/${jobId}`, { timeoutMs: POLL_REQUEST_TIMEOUT_MS });
     if (onStatus) onStatus(s);
     if (s.status === "done") return s;
     if (s.status === "error") throw new Error(s.error || "Job failed");
