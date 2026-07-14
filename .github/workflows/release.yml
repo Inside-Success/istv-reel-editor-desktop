@@ -1,0 +1,55 @@
+name: Release desktop build
+
+# Runs when a version tag (v0.1.6, ...) is pushed, or manually from Actions.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    # One serialized matrix over every artifact we ship. Serialized because
+    # each electron-builder job publishes to the SAME GitHub release: run them
+    # in parallel and they race to create it, and the losers die with HTTP 422
+    # "already_exists". max-parallel: 1 -> the first job creates the release,
+    # the rest just upload their artifact to it.
+    #
+    # ffmpeg-static downloads a single binary chosen by npm_config_arch at
+    # install time, so each job sets it to its target arch — otherwise every
+    # macOS DMG would carry the arm64 host binary and crash on Intel with
+    # EBADARCH (-86). ffprobe-static bundles every arch and resolves at runtime.
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - os: macos-14
+            platform: mac
+            arch: arm64
+          - os: macos-14
+            platform: mac
+            arch: x64
+          - os: windows-latest
+            platform: win
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # create/update the GitHub Release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies (fetch ${{ matrix.arch }} ffmpeg binary)
+        run: npm ci
+        env:
+          npm_config_arch: ${{ matrix.arch }}
+
+      - name: Build and publish ${{ matrix.platform }} ${{ matrix.arch }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish always
