@@ -28,6 +28,12 @@
     "directories": {
       "output": "release"
     },
+    "publish": {
+      "provider": "github",
+      "owner": "Inside-Success",
+      "repo": "istv-reel-editor-desktop",
+      "releaseType": "release"
+    },
     "files": [
       "src/**/*",
       "scripts/**/*",
