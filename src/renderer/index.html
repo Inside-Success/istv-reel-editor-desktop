@@ -107,12 +107,17 @@
               <div class="insp-group">
                 <div class="ig-head">Trim</div>
                 <div class="trim-btns">
-                  <button class="btn sm" data-trim="in" data-d="-0.5" title="Extend in (earlier)">⟸ In</button>
-                  <button class="btn sm" data-trim="in" data-d="0.5" title="Cut in (later)">In ⟹</button>
-                  <button class="btn sm" data-trim="out" data-d="-0.5" title="Cut out (earlier)">⟸ Out</button>
-                  <button class="btn sm" data-trim="out" data-d="0.5" title="Extend out (later)">Out ⟹</button>
+                  <button class="btn sm" data-trim="in" data-frames="-1" title="Move in-point one frame earlier">⟸ In</button>
+                  <button class="btn sm" data-trim="in" data-frames="1" title="Move in-point one frame later">In ⟹</button>
+                  <button class="btn sm" data-trim="out" data-frames="-1" title="Move out-point one frame earlier">⟸ Out</button>
+                  <button class="btn sm" data-trim="out" data-frames="1" title="Move out-point one frame later">Out ⟹</button>
                 </div>
-                <div class="ig-hint">Or drag the handles on the reel in the timeline.</div>
+                <div class="trim-btns">
+                  <button id="snapIn" class="btn sm" title="Set the in-point to the playhead">In = Playhead</button>
+                  <button id="snapOut" class="btn sm" title="Set the out-point to the playhead">Out = Playhead</button>
+                  <button id="splitBtn" class="btn sm accent" title="Split the reel at the playhead (S)">✂ Split</button>
+                </div>
+                <div class="ig-hint">In/Out buttons nudge one frame. Or drag the handles on the reel in the timeline; use × to delete a piece.</div>
               </div>
 
               <div class="insp-group">

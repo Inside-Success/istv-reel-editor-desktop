@@ -527,45 +527,89 @@ function drawReelRegion(reel) {
   document.querySelectorAll(".reel-region").forEach((n) => n.remove());
   const track = $("track");
   const segs = reel.segments;
+  const multi = segs.length > 1;
   segs.forEach((seg, idx) => {
     const region = document.createElement("div");
     region.className = "reel-region editable";
     region.style.left = seg.startSec * pps + "px";
     region.style.width = Math.max(4, (seg.endSec - seg.startSec) * pps) + "px";
-    if (idx === 0) region.appendChild(makeHandle("in", reel, region));
-    if (idx === segs.length - 1) region.appendChild(makeHandle("out", reel, region));
+    // Every span gets both edges as draggable handles so pieces created by a
+    // split can be trimmed independently (interior boundaries carve gaps).
+    region.appendChild(makeHandle("start", idx, reel, region));
+    region.appendChild(makeHandle("end", idx, reel, region));
+    if (multi) region.appendChild(makeDeleteBtn(idx, reel));
     track.appendChild(region);
   });
 }
 
-function makeHandle(side, reel, regionEl) {
+function makeDeleteBtn(idx, reel) {
+  const b = document.createElement("div");
+  b.className = "reel-del";
+  b.title = "Delete this piece (keeps the rest of the reel)";
+  b.textContent = "×";
+  // Swallow mousedown so it never starts a scrub/drag on the track underneath.
+  b.addEventListener("mousedown", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+  });
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!window.ReelModel.deleteSegment(reel, idx)) return;
+    recomputeReelWords(reel);
+    commit();
+    selectReel(reel.id); // redraws region, subtitle editor, panel; reseeks to in
+    setStatus(`Piece deleted — reel now ${reel.segments.length} piece(s).`);
+  });
+  return b;
+}
+
+function makeHandle(side, idx, reel, regionEl) {
   const h = document.createElement("div");
-  h.className = "reel-handle " + side;
-  h.title = side === "in" ? "Drag to trim/extend the start" : "Drag to trim/extend the end";
+  h.className = "reel-handle " + (side === "start" ? "in" : "out");
+  h.title = side === "start" ? "Drag to move this piece's start" : "Drag to move this piece's end";
   h.addEventListener("mousedown", (e) => {
     e.stopPropagation();
     e.preventDefault();
     document.body.style.cursor = "ew-resize";
 
-    const move = (ev) => {
+    // Coalesce mousemove → one update per animation frame. Setting video
+    // currentTime and touching the model on every raw mousemove is what caused
+    // the ~1s lag while zoomed (dozens of proxy seeks queued per second).
+    let pendingX = null;
+    let frameReq = 0;
+    const apply = () => {
+      frameReq = 0;
+      if (pendingX == null) return;
       const pps = state.pxPerSec * state.zoom;
       const rect = $("track").getBoundingClientRect();
-      const t = (ev.clientX - rect.left + scroller.scrollLeft) / pps;
-      if (side === "in") setReelIn(reel, t);
-      else setReelOut(reel, t);
+      // rect.left already includes the scroll offset — do NOT add scrollLeft.
+      const t = (pendingX - rect.left) / pps;
+      if (side === "start") window.ReelModel.setSegmentStart(reel, idx, t);
+      else window.ReelModel.setSegmentEnd(reel, idx, t, state.meta.durationSec);
       // Update this region's geometry IN PLACE — never recreate the element being
       // dragged, or the drag breaks. Full redraw happens once on release.
-      const seg = side === "in" ? reel.segments[0] : reel.segments[reel.segments.length - 1];
+      const seg = reel.segments[idx];
       regionEl.style.left = seg.startSec * pps + "px";
       regionEl.style.width = Math.max(4, (seg.endSec - seg.startSec) * pps) + "px";
       $("iIO").textContent = `in ${fmtTC(reel.inSec)} / out ${fmtTC(reel.outSec)}`;
       $("iDur").textContent = reel.durationSec.toFixed(1) + "s";
-      video.currentTime = snapFrame(side === "in" ? reel.inSec : reel.outSec);
+      video.currentTime = snapFrame(side === "start" ? seg.startSec : seg.endSec);
+      pendingX = null;
+    };
+    const move = (ev) => {
+      pendingX = ev.clientX;
+      if (!frameReq) frameReq = requestAnimationFrame(apply);
     };
     const up = () => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
+      if (frameReq) {
+        cancelAnimationFrame(frameReq);
+        apply(); // flush the last pending position
+      }
       document.body.style.cursor = "";
+      // Heavy transcript re-scan happens ONCE here, not on every move.
+      recomputeReelWords(reel);
       commit();
       drawReelRegion(reel);
       buildSubEditor(reel); // refresh the editable word list for the new range
@@ -575,6 +619,54 @@ function makeHandle(side, reel, regionEl) {
     window.addEventListener("mouseup", up);
   });
   return h;
+}
+
+// ── Split / snap tools (razor at the playhead) ─────────────────────────────────
+
+/** Cut the current reel into two pieces at the frame under the playhead. */
+function splitAtPlayhead() {
+  const reel = currentReel();
+  if (!reel) {
+    setStatus("Select a reel first, then move the playhead where you want to cut.");
+    return;
+  }
+  const t = snapFrame(video.currentTime);
+  const idx = window.ReelModel.splitReel(reel, t);
+  if (idx < 0) {
+    setStatus("Move the playhead inside the reel (not at its very edge) to split.");
+    return;
+  }
+  recomputeReelWords(reel);
+  commit();
+  drawReelRegion(reel);
+  buildSubEditor(reel);
+  renderReelsPanel();
+  setStatus(
+    `Split at ${fmtTC(t)} — now ${reel.segments.length} pieces. ` +
+      `Delete a piece with its × or drag its handles.`
+  );
+}
+
+/** Snap the reel's in-point to the current playhead frame. */
+function snapInToPlayhead() {
+  const reel = currentReel();
+  if (!reel) return;
+  setReelIn(reel, snapFrame(video.currentTime));
+  commit();
+  openReelEditor(reel);
+  drawReelRegion(reel);
+  renderReelsPanel();
+}
+
+/** Snap the reel's out-point to the current playhead frame. */
+function snapOutToPlayhead() {
+  const reel = currentReel();
+  if (!reel) return;
+  setReelOut(reel, snapFrame(video.currentTime));
+  commit();
+  openReelEditor(reel);
+  drawReelRegion(reel);
+  renderReelsPanel();
 }
 
 // ── Subtitle overlay (karaoke word-highlight) during playback ──────────────────
@@ -726,7 +818,10 @@ function updatePlayhead() {
 function seekFromClientX(clientX) {
   const track = $("track");
   const rect = track.getBoundingClientRect();
-  const x = clientX - rect.left + scroller.scrollLeft;
+  // track is the scrolled element, so its rect.left already reflects
+  // scroller.scrollLeft — adding scrollLeft again double-counts the scroll and
+  // throws seeks/handles off once zoomed past 100%.
+  const x = clientX - rect.left;
   const pps = state.pxPerSec * state.zoom;
   const t = Math.max(0, Math.min(state.meta.durationSec, x / pps));
   video.currentTime = snapFrame(t);
@@ -1112,14 +1207,15 @@ function wire() {
   // 9:16 preview toggle
   $("previewMode").addEventListener("click", togglePreviewMode);
 
-  // Trim buttons (cut/extend in/out)
+  // Trim buttons (cut/extend in/out). Move by whole frames (data-frames) so the
+  // in/out points step frame-by-frame instead of jumping by fixed seconds.
   document.querySelectorAll(".trim-btns [data-trim]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const reel = currentReel();
       if (!reel) return;
-      const d = Number(btn.dataset.d);
-      if (btn.dataset.trim === "in") setReelIn(reel, reel.inSec + d);
-      else setReelOut(reel, reel.outSec + d);
+      const d = Number(btn.dataset.frames || 0) * frameDur();
+      if (btn.dataset.trim === "in") setReelIn(reel, snapFrame(reel.inSec + d));
+      else setReelOut(reel, snapFrame(reel.outSec + d));
       commit();
       openReelEditor(reel);
       drawReelRegion(reel);
@@ -1127,6 +1223,11 @@ function wire() {
       video.currentTime = snapFrame(btn.dataset.trim === "in" ? reel.inSec : reel.outSec);
     });
   });
+
+  // Split + snap-to-playhead tools.
+  $("splitBtn").addEventListener("click", splitAtPlayhead);
+  $("snapIn").addEventListener("click", snapInToPlayhead);
+  $("snapOut").addEventListener("click", snapOutToPlayhead);
 
   // Locked-option toggles
   const toggleSetting = (id, key, after) => {
@@ -1311,6 +1412,9 @@ function wire() {
     } else if (e.code === "ArrowRight") {
       e.preventDefault();
       stepFrame(1);
+    } else if (e.key.toLowerCase() === "s" && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      splitAtPlayhead();
     }
   });
 

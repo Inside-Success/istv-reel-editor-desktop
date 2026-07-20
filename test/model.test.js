@@ -83,6 +83,55 @@ test("out cannot pass last span start (min span)", () => {
   assert.ok(Math.abs(r.segments[1].endSec - (60 + M.MIN_SPAN)) < 1e-9);
 });
 
+console.log("model: split / delete / per-span edges");
+test("split divides the span under t into two contiguous spans", () => {
+  const r = sampleReel();
+  const idx = M.splitReel(r, 25); // inside first span [10,40]
+  assert.strictEqual(idx, 0);
+  assert.strictEqual(r.segments.length, 3);
+  assert.strictEqual(r.segments[0].startSec, 10);
+  assert.strictEqual(r.segments[0].endSec, 25);
+  assert.strictEqual(r.segments[1].startSec, 25);
+  assert.strictEqual(r.segments[1].endSec, 40);
+  assert.strictEqual(r.durationSec, 50); // total unchanged by a split
+});
+test("split refuses at/outside a span edge (returns -1, no change)", () => {
+  const r = sampleReel();
+  assert.strictEqual(M.splitReel(r, 50), -1); // 50 is in the gap 40..60
+  assert.strictEqual(M.splitReel(r, 10.1), -1); // within MIN_SPAN of an edge
+  assert.strictEqual(r.segments.length, 2);
+});
+test("split preserves the span's role on both halves", () => {
+  const r = sampleReel();
+  M.splitReel(r, 25);
+  assert.strictEqual(r.segments[0].role, "HOOK");
+  assert.strictEqual(r.segments[1].role, "HOOK");
+});
+test("deleteSegment drops a piece and recomputes in/out/duration", () => {
+  const r = sampleReel();
+  assert.strictEqual(M.deleteSegment(r, 0), true);
+  assert.strictEqual(r.segments.length, 1);
+  assert.strictEqual(r.inSec, 60);
+  assert.strictEqual(r.outSec, 80);
+  assert.strictEqual(r.durationSec, 20);
+});
+test("deleteSegment refuses to remove the last remaining span", () => {
+  const r = sampleReel();
+  M.deleteSegment(r, 0);
+  assert.strictEqual(M.deleteSegment(r, 0), false);
+  assert.strictEqual(r.segments.length, 1);
+});
+test("setSegmentEnd on an interior span is bounded by the next span start", () => {
+  const r = sampleReel();
+  M.setSegmentEnd(r, 0, 999, 120); // try to push first span past the second
+  assert.strictEqual(r.segments[0].endSec, r.segments[1].startSec); // clamped to 60
+});
+test("setSegmentStart on an interior span is bounded by the previous span end", () => {
+  const r = sampleReel();
+  M.setSegmentStart(r, 1, 0); // try to pull second span before the first ends
+  assert.strictEqual(r.segments[1].startSec, r.segments[0].endSec); // clamped to 40
+});
+
 console.log("model: non-destructive (master words untouched)");
 test("editing in/out never mutates word list", () => {
   const r = sampleReel();

@@ -46,6 +46,57 @@
     return recomputeReel(reel);
   }
 
+  // Move ANY span's start, bounded by the previous span's end (or 0) and its own
+  // end minus MIN_SPAN. Generalises setReelIn to interior spans created by a split.
+  function setSegmentStart(reel, idx, t) {
+    const segs = reel.segments;
+    const seg = segs[idx];
+    if (!seg) return recomputeReel(reel);
+    const lo = idx > 0 ? segs[idx - 1].endSec : 0;
+    seg.startSec = Math.max(lo, Math.min(t, seg.endSec - MIN_SPAN));
+    return recomputeReel(reel);
+  }
+  // Move ANY span's end, bounded by its own start plus MIN_SPAN and the next
+  // span's start (or the master duration for the last span).
+  function setSegmentEnd(reel, idx, t, masterDur) {
+    const segs = reel.segments;
+    const seg = segs[idx];
+    if (!seg) return recomputeReel(reel);
+    const hi =
+      idx < segs.length - 1 ? segs[idx + 1].startSec : masterDur > 0 ? masterDur : t;
+    seg.endSec = Math.min(hi, Math.max(t, seg.startSec + MIN_SPAN));
+    return recomputeReel(reel);
+  }
+
+  // Razor: split the span under time t into two contiguous spans. No-op (returns
+  // -1) if t sits at or outside every span's editable interior. Returns the index
+  // of the left span on success so callers can focus/redraw around it.
+  function splitReel(reel, t) {
+    const segs = reel.segments;
+    for (let i = 0; i < segs.length; i++) {
+      const s = segs[i];
+      if (t > s.startSec + MIN_SPAN && t < s.endSec - MIN_SPAN) {
+        const right = { startSec: t, endSec: s.endSec };
+        if (s.role != null) right.role = s.role;
+        s.endSec = t;
+        segs.splice(i + 1, 0, right);
+        recomputeReel(reel);
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  // Drop one span (used after a split to actually cut a piece out). Refuses to
+  // delete the last remaining span so a reel is never left empty.
+  function deleteSegment(reel, idx) {
+    const segs = reel.segments;
+    if (segs.length <= 1 || idx < 0 || idx >= segs.length) return false;
+    segs.splice(idx, 1);
+    recomputeReel(reel);
+    return true;
+  }
+
   // Words shown as subtitles: edits applied, fillers dropped when the toggle is
   // on, and words the editor blanked out (edited to empty/whitespace) removed.
   function visibleWords(reel) {
@@ -73,6 +124,10 @@
     recomputeReel,
     setReelIn,
     setReelOut,
+    setSegmentStart,
+    setSegmentEnd,
+    splitReel,
+    deleteSegment,
     visibleWords,
   };
 
