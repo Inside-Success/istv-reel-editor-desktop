@@ -9,11 +9,18 @@ on:
 
 jobs:
   build:
-    # One serialized matrix over every artifact we ship. Serialized because
-    # each electron-builder job publishes to the SAME GitHub release: run them
-    # in parallel and they race to create it, and the losers die with HTTP 422
-    # "already_exists". max-parallel: 1 -> the first job creates the release,
-    # the rest just upload their artifact to it.
+    # One serialized matrix over every artifact we ship. All jobs publish to the
+    # SAME GitHub release. package.json sets releaseType: "draft", so the first
+    # job CREATES a draft release and every later job FINDS and reuses that same
+    # draft to upload into. (With releaseType "release" each job published its
+    # own release immediately, so later jobs couldn't find a draft to reuse and
+    # electron-builder minted a SECOND release for the tag — the Windows build
+    # ended up split off into its own release. Draft-then-publish avoids that.)
+    # A separate `publish` job below flips the finished draft to public once, so
+    # users never see a half-populated release mid-build.
+    #
+    # max-parallel: 1 keeps the create/reuse ordering deterministic and dodges
+    # the HTTP 422 "already_exists" race two jobs hit creating the draft at once.
     #
     # ffmpeg-static downloads a single binary chosen by npm_config_arch at
     # install time, so each job sets it to its target arch — otherwise every
@@ -53,3 +60,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish always
+
+  publish:
+    # Flip the fully-populated draft release to public, exactly once, after every
+    # OS artifact has been uploaded. Tag pushes only — a workflow_dispatch run has
+    # no tag to publish.
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --draft=false \
+            --latest
