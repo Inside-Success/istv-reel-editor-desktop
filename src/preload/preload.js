@@ -46,4 +46,17 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.on(C.SYNC_EVENT, handler);
     return () => ipcRenderer.removeListener(C.SYNC_EVENT, handler);
   },
+
+  // In-app auto-update. `platform` lets the UI pick the right flow: Windows
+  // self-installs; macOS (unsigned for now) sends the user to the download page.
+  platform: process.platform,
+  checkForUpdate: () => ipcRenderer.invoke(C.UPDATE_CHECK),
+  downloadUpdate: () => ipcRenderer.invoke(C.UPDATE_DOWNLOAD),
+  installUpdate: () => ipcRenderer.invoke(C.UPDATE_INSTALL),
+  openReleasesPage: () => ipcRenderer.invoke(C.UPDATE_OPEN_RELEASES),
+  onUpdateEvent: (cb) => {
+    const handler = (_evt, e) => cb(e);
+    ipcRenderer.on(C.UPDATE_EVENT, handler);
+    return () => ipcRenderer.removeListener(C.UPDATE_EVENT, handler);
+  },
 });

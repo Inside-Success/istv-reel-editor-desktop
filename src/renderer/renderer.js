@@ -1430,3 +1430,142 @@ function wire() {
 }
 
 wire();
+
+// ── Auto-update UI ────────────────────────────────────────────────────────────
+/* Listens to update events from main and drives a small bottom-right toast.
+ * Windows self-installs (Download → Restart & install). macOS isn't code-signed
+ * yet, so it can't self-install — there the toast still announces the update but
+ * the button opens the GitHub release page for a manual download.
+ * A background check runs ~4s after launch; the footer's "Check for updates"
+ * button triggers a manual one that also confirms "you're up to date". */
+function wireUpdates() {
+  if (!window.api || !window.api.onUpdateEvent) return; // older preload; skip
+
+  const isMac = window.api.platform === "darwin";
+  const toast = $("updateToast");
+  const title = $("utTitle");
+  const msg = $("utMsg");
+  const progWrap = $("utProgress");
+  const bar = $("utBar");
+  const pct = $("utPct");
+  const action = $("utAction");
+  const dismiss = $("utDismiss");
+  const checkBtn = $("checkUpdatesBtn");
+
+  let manual = false; // true when the current check was user-initiated
+  let onAction = null; // what the primary button does right now
+
+  const showToast = () => toast.classList.remove("hidden");
+  const hideToast = () => toast.classList.add("hidden");
+  const showProgress = (show) => progWrap.classList.toggle("hidden", !show);
+  function setAction(label, fn) {
+    if (label) {
+      action.textContent = label;
+      action.classList.remove("hidden");
+      onAction = fn;
+    } else {
+      action.classList.add("hidden");
+      onAction = null;
+    }
+  }
+  function endBusy() {
+    checkBtn.disabled = false;
+    checkBtn.textContent = "Check for updates";
+  }
+
+  action.addEventListener("click", () => onAction && onAction());
+  dismiss.addEventListener("click", hideToast);
+
+  checkBtn.addEventListener("click", () => {
+    manual = true;
+    checkBtn.disabled = true;
+    checkBtn.textContent = "Checking…";
+    window.api.checkForUpdate();
+  });
+
+  window.api.onUpdateEvent((e) => {
+    switch (e.status) {
+      case "checking":
+        if (manual) {
+          title.textContent = "Checking for updates…";
+          msg.textContent = "";
+          showProgress(false);
+          setAction(null);
+          showToast();
+        }
+        break;
+
+      case "available":
+        title.textContent = "Update available";
+        if (isMac) {
+          // Unsigned mac build can't self-install — send them to the download.
+          msg.textContent = `Version ${e.version} is available to download.`;
+          showProgress(false);
+          setAction("Get it manually", () => window.api.openReleasesPage());
+        } else {
+          msg.textContent = `Version ${e.version} is ready to download.`;
+          showProgress(false);
+          setAction("Download", () => {
+            title.textContent = "Downloading update…";
+            msg.textContent = `Version ${e.version}`;
+            showProgress(true);
+            bar.style.width = "0%";
+            pct.textContent = "0%";
+            setAction(null);
+            window.api.downloadUpdate();
+          });
+        }
+        showToast();
+        endBusy();
+        break;
+
+      case "download-progress": {
+        const p = Math.round((e.percent || 0) * 100);
+        bar.style.width = p + "%";
+        pct.textContent = p + "%";
+        showProgress(true);
+        break;
+      }
+
+      case "downloaded":
+        title.textContent = "Update ready to install";
+        msg.textContent = `Version ${e.version} downloaded. Restart to finish updating.`;
+        showProgress(false);
+        setAction("Restart & install", () => window.api.installUpdate());
+        showToast();
+        endBusy();
+        break;
+
+      case "not-available":
+        if (manual) {
+          title.textContent = "You're up to date";
+          msg.textContent = e.dev
+            ? "Auto-update runs in the installed app. This is a dev build."
+            : `You're running the latest version${e.version ? " (" + e.version + ")" : ""}.`;
+          showProgress(false);
+          setAction(null);
+          showToast();
+          setTimeout(hideToast, 4000);
+        }
+        endBusy();
+        manual = false;
+        break;
+
+      case "error":
+        // Only surface errors when the user explicitly checked, or a download
+        // was already under way. Silent background failures stay silent.
+        if (manual || !progWrap.classList.contains("hidden")) {
+          title.textContent = "Update failed";
+          msg.textContent = e.message || "Could not complete the update.";
+          showProgress(false);
+          setAction("Get it manually", () => window.api.openReleasesPage());
+          showToast();
+        }
+        endBusy();
+        manual = false;
+        break;
+    }
+  });
+}
+
+wireUpdates();

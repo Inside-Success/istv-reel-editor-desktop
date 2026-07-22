@@ -21,4 +21,11 @@ module.exports = {
   ADD_CAMERA_DIALOG: "cameras:add-camera-dialog",
   SYNC_CAMERAS: "cameras:sync",
   SYNC_EVENT: "cameras:sync-event",
+
+  // In-app auto-update (electron-updater ⇢ GitHub Releases).
+  UPDATE_CHECK: "update:check", // renderer → main: check for a newer release
+  UPDATE_DOWNLOAD: "update:download", // renderer → main: start downloading it
+  UPDATE_INSTALL: "update:install", // renderer → main: quit + install now
+  UPDATE_OPEN_RELEASES: "update:open-releases", // renderer → main: open GitHub releases
+  UPDATE_EVENT: "update:event", // main → renderer: status/progress stream
 };

@@ -306,7 +306,24 @@
 
       <footer class="statusbar">
         <span id="status">Ready.</span>
+        <button id="checkUpdatesBtn" class="link-btn update-check" title="Check for a newer version">Check for updates</button>
       </footer>
+
+      <!-- Auto-update toast (shown only when there's something to report) -->
+      <div id="updateToast" class="update-toast hidden">
+        <div class="ut-body">
+          <div class="ut-title" id="utTitle">Update available</div>
+          <div class="ut-msg" id="utMsg"></div>
+          <div class="ut-progress hidden" id="utProgress">
+            <div class="progress"><div id="utBar" class="progress-bar"></div></div>
+            <div class="progress-pct" id="utPct">0%</div>
+          </div>
+        </div>
+        <div class="ut-actions">
+          <button id="utAction" class="btn primary sm hidden"></button>
+          <button id="utDismiss" class="btn sm">Dismiss</button>
+        </div>
+      </div>
     </div>
 
     <script src="model.js"></script>
