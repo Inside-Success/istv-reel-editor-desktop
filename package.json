@@ -1,7 +1,7 @@
 {
   "name": "istv-reel-editor",
   "productName": "ISTV Reel Editor",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Cross-platform desktop editor that turns a documentary into 9:16 reels.",
   "main": "src/main/main.js",
   "author": "ISTV",
@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node scripts/launch.js",
     "smoke": "node scripts/launch.js --smoke",
-    "test": "node test/model.test.js",
+    "test": "node test/model.test.js && node test/updater.test.js",
     "dist:win": "electron-builder --win --x64",
     "dist:mac": "electron-builder --mac --arm64 --x64"
   },
@@ -19,6 +19,7 @@
     "electron-builder": "^26.15.3"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "ffmpeg-static": "^5.2.0",
     "ffprobe-static": "^3.1.0"
   },
@@ -44,7 +45,12 @@
       {
         "from": "engine",
         "to": "engine",
-        "filter": ["**/*", "!.venv", "!**/__pycache__", "!**/*.pyc"]
+        "filter": [
+          "**/*",
+          "!.venv",
+          "!**/__pycache__",
+          "!**/*.pyc"
+        ]
       }
     ],
     "asarUnpack": [
@@ -53,13 +59,31 @@
     ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "artifactName": "ISTV-Reel-Editor-Setup.${ext}"
     },
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "artifactName": "ISTV-Reel-Editor-${arch}.${ext}"
     },

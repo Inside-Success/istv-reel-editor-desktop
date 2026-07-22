@@ -11,6 +11,7 @@ const backend = require("./backend");
 const { toReferenceReels } = require("./reels");
 const exporter = require("./export");
 const camSync = require("./sync");
+const { initUpdater } = require("./updater");
 
 const isSmoke = process.argv.includes("--smoke");
 
@@ -408,6 +409,11 @@ ipcMain.handle(C.SYNC_CAMERAS, async (evt, { referenceAudioPath, cameras }) => {
 
 app.whenReady().then(() => {
   createWindow();
+  // In-app auto-update. Skipped during the smoke test (it exits fast and has no
+  // window to talk to). Safe in dev — it just reports "up to date".
+  if (!isSmoke) {
+    initUpdater(() => mainWindow);
+  }
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
