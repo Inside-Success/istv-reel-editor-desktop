@@ -58,9 +58,18 @@ jobs:
       # ffmpeg-static resolves ONE binary at install time from npm_config_arch,
       # always written to node_modules/ffmpeg-static/ffmpeg. A checkout can
       # therefore only hold one arch at a time, while a both-arches build needs
-      # two. Re-run the package's own installer once per arch and stash each
+      # two. Run the package's own installer once per arch and stash each
       # result; build/afterPack.js copies the matching one into each app bundle
       # as it is packed.
+      #
+      # Two traps here, both of which silently yield the host arch:
+      #   - `npm rebuild ffmpeg-static` does NOT work. It runs install.js, but
+      #     the script exits early with "ffmpeg is installed already" whenever
+      #     the binary is already on disk, so the arch never changes. Hence the
+      #     explicit rm before each run, and calling install.js directly rather
+      #     than going through an npm lifecycle that might not forward the env.
+      #   - `lipo -archs` reports Mach-O slice names, so the Intel slice comes
+      #     back as x86_64, NOT x64. The assertion below accounts for that.
       #
       # Getting this wrong is a crash, not a warning: an Intel ffmpeg inside the
       # arm64 bundle (or vice versa) fails with macOS EBADARCH (-86, "Bad CPU
@@ -78,9 +87,14 @@ jobs:
         run: |
           mkdir -p "$FFMPEG_STAGE_DIR"
           for arch in x64 arm64; do
-            npm_config_arch="$arch" npm rebuild ffmpeg-static
+            rm -f node_modules/ffmpeg-static/ffmpeg
+            ( cd node_modules/ffmpeg-static && npm_config_arch="$arch" node install.js )
             cp node_modules/ffmpeg-static/ffmpeg "$FFMPEG_STAGE_DIR/ffmpeg-$arch"
-            echo "staged $arch ffmpeg -> $(lipo -archs "$FFMPEG_STAGE_DIR/ffmpeg-$arch")"
+            got=$(lipo -archs "$FFMPEG_STAGE_DIR/ffmpeg-$arch")
+            case "$arch:$got" in
+              x64:*x86_64*|arm64:*arm64*) echo "staged $arch ffmpeg -> $got" ;;
+              *) echo "::error::staged $arch ffmpeg is [$got], expected $arch"; exit 1 ;;
+            esac
           done
 
       - name: Build and publish ${{ matrix.platform }}
