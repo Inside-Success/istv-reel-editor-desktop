@@ -1,6 +1,6 @@
 name: Release desktop build
 
-# Runs when a version tag (v0.1.6, ...) is pushed, or manually from Actions.
+# Runs when a version tag (v0.1.9, ...) is pushed, or manually from Actions.
 on:
   push:
     tags:
@@ -9,23 +9,29 @@ on:
 
 jobs:
   build:
-    # One serialized matrix over every artifact we ship. All jobs publish to the
-    # SAME GitHub release. package.json sets releaseType: "draft", so the first
-    # job CREATES a draft release and every later job FINDS and reuses that same
-    # draft to upload into. (With releaseType "release" each job published its
-    # own release immediately, so later jobs couldn't find a draft to reuse and
-    # electron-builder minted a SECOND release for the tag — the Windows build
-    # ended up split off into its own release. Draft-then-publish avoids that.)
-    # A separate `publish` job below flips the finished draft to public once, so
-    # users never see a half-populated release mid-build.
+    # One job per OS. Both publish to the SAME GitHub release. package.json sets
+    # releaseType: "draft", so the first job CREATES a draft release and the
+    # second FINDS and reuses that same draft to upload into. (With releaseType
+    # "release" each job published its own release immediately, so later jobs
+    # couldn't find a draft to reuse and electron-builder minted a SECOND release
+    # for the tag — the Windows build ended up split off into its own release.
+    # Draft-then-publish avoids that.) A separate `publish` job below flips the
+    # finished draft to public once, so users never see a half-populated release
+    # mid-build.
     #
     # max-parallel: 1 keeps the create/reuse ordering deterministic and dodges
     # the HTTP 422 "already_exists" race two jobs hit creating the draft at once.
     #
-    # ffmpeg-static downloads a single binary chosen by npm_config_arch at
-    # install time, so each job sets it to its target arch — otherwise every
-    # macOS DMG would carry the arm64 host binary and crash on Intel with
-    # EBADARCH (-86). ffprobe-static bundles every arch and resolves at runtime.
+    # The macOS job builds BOTH arches in one go (mac.target lists x64 and arm64)
+    # rather than one job per arch. Two reasons:
+    #   - electron-builder writes latest-mac.yml describing only the artifacts
+    #     from that run, and each job's upload overwrites the previous one's. Per-
+    #     arch jobs therefore leave behind a manifest covering a single arch,
+    #     silently breaking electron-updater for the other one.
+    #   - The x64 slice cross-builds fine on the Apple Silicon runner, and the
+    #     hosted Intel macos-13 runner is retired (its jobs queue forever).
+    # The per-arch ffmpeg binary that a both-arches build needs is handled by
+    # build/afterPack.js — see the staging step below.
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -33,13 +39,8 @@ jobs:
         include:
           - os: macos-14
             platform: mac
-            arch: arm64
-          - os: macos-14
-            platform: mac
-            arch: x64
           - os: windows-latest
             platform: win
-            arch: x64
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write # create/update the GitHub Release
@@ -51,15 +52,42 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Install dependencies (fetch ${{ matrix.arch }} ffmpeg binary)
+      - name: Install dependencies
         run: npm ci
-        env:
-          npm_config_arch: ${{ matrix.arch }}
 
-      - name: Build and publish ${{ matrix.platform }} ${{ matrix.arch }}
+      # ffmpeg-static resolves ONE binary at install time from npm_config_arch,
+      # always written to node_modules/ffmpeg-static/ffmpeg. A checkout can
+      # therefore only hold one arch at a time, while a both-arches build needs
+      # two. Re-run the package's own installer once per arch and stash each
+      # result; build/afterPack.js copies the matching one into each app bundle
+      # as it is packed.
+      #
+      # Getting this wrong is a crash, not a warning: an Intel ffmpeg inside the
+      # arm64 bundle (or vice versa) fails with macOS EBADARCH (-86, "Bad CPU
+      # type in executable") the first time the app shells out to ffmpeg. That is
+      # what shipped through v0.1.8, because mac.target lists both arches and so
+      # overrode the per-job --arm64/--x64 flag. `lipo -archs` is echoed as a
+      # receipt that each staged binary really is the arch it claims.
+      #
+      # ffprobe-static needs no equivalent: it vendors every arch under
+      # bin/<platform>/<arch>/ and picks at runtime.
+      - name: Stage an ffmpeg binary for each macOS arch
+        if: matrix.platform == 'mac'
+        env:
+          FFMPEG_STAGE_DIR: ${{ runner.temp }}/ffmpeg
+        run: |
+          mkdir -p "$FFMPEG_STAGE_DIR"
+          for arch in x64 arm64; do
+            npm_config_arch="$arch" npm rebuild ffmpeg-static
+            cp node_modules/ffmpeg-static/ffmpeg "$FFMPEG_STAGE_DIR/ffmpeg-$arch"
+            echo "staged $arch ffmpeg -> $(lipo -archs "$FFMPEG_STAGE_DIR/ffmpeg-$arch")"
+          done
+
+      - name: Build and publish ${{ matrix.platform }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish always
+          FFMPEG_STAGE_DIR: ${{ runner.temp }}/ffmpeg
+        run: npx electron-builder --${{ matrix.platform }} --publish always
 
   publish:
     # Flip the fully-populated draft release to public, exactly once, after every
